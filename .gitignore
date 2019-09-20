@@ -11,3 +11,11 @@ ehthumbs.db
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+Python-*.tgz
+openssl-*.tar.gz
+xz-*.tar.gz
+/Python-*
+/openssl-*
+/xz-*
+/ssl
+python-embeded
