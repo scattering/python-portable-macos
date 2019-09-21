@@ -1,5 +1,17 @@
 #!/bin/sh
 
+# Generates a relocatable Python.framework in python-embed.  This can be
+# used as the basis of a shipping application.  Just need to put the framework
+# in your app then pip install your packages.
+#
+# You should probably strip the cached pyc files before shipping to make
+# the app smaller, and because they have the path for the build embedded
+# within them:
+#
+#    find Python.framework -name __pycache__ | xargs rm -r
+#
+# Unfortunately, this will increase startup time on first launch.
+
 # Details about building the relocatable python framework were cribbed from
 # the following package:
 #
@@ -11,6 +23,10 @@
 # TODO: A number of the tests are failing in the python framework build.
 # Need to sort out the failed tests before promising a complete python.
 
+# Aim for the OS 10.9 and above
+MACOSX_DEPLOYMENT_TARGET=10.9
+export MACOSX_DEPLOYMENT_TARGET
+
 # Full python needs openssl, xz, gdbm and maybe pkg-config
 # osaudiodev and spwd not built (these are unix packages, not for mac?)
 OPENSSL_VERSION="1.1.1d"
@@ -18,6 +34,7 @@ XZ_VERSION="5.2.4"
 PYTHON_VERSION="3.7.4"
 MAJOR_MINOR="3.7"
 IDLE_PATH="/Applications/Python $MAJOR_MINOR"
+
 
 # Note: To upgrade to newer release of openssl or python you need to
 # change the version numbers in the line below to the updated version
@@ -74,6 +91,8 @@ if [ ! -f $OPENSSL_BUNDLE ]; then
     large_echo "Download and uncompress openssl $OPENSSL_VERSION source"
     curl -O $OPENSSL_URL
     shasum -a 1 -c openssl.sha256
+fi
+if [ ! -d $OPENSSL_SOURCE ]; then
     tar -zxvf $OPENSSL_BUNDLE &> /dev/null
 fi
 
@@ -81,6 +100,8 @@ if [ ! -f $XZ_BUNDLE ]; then
     large_echo "Download and uncompress xz $XZ_VERSION source"
     curl -L $XZ_URL -o $XZ_BUNDLE
     shasum -a 1 -c xz.sha256
+fi
+if [ ! -d $XZ_SOURCE ]; then
     tar -zxvf $XZ_BUNDLE &> /dev/null
     # Note: for 10.12, Sigil needed to patch xz so that configure does
     # not search for "futimens".  This wasn't a problem on my box, but
@@ -91,6 +112,8 @@ if [ ! -f $PYTHON_BUNDLE ]; then
     large_echo "Download and uncompress Python $PYTHON_VERSION source"
     curl -OPENSSL_BUNDLE $PYTHON_URL
     shasum -a 1 -c python.sha256
+fi
+if [ ! -d $PYTHON_SOURCE ]; then
     tar -zxvf $PYTHON_BUNDLE &> /dev/null
 fi
 
@@ -116,7 +139,8 @@ fi
 large_echo "Build python $PYTHON_VERSION"
 cd "$CURRENT_DIR/$PYTHON_SOURCE"
 if false; then
-    ./configure MACOSX_DEPLOYMENT_TARGET=10.9 \
+    # TODO: strip __pycache__ and tests as in the framework build
+    ./configure \
         --prefix="$PYTHON_INSTALL_PREFIX"  \
         --with-openssl="$OPENSSL_INSTALL_PREFIX" \
         --enable-optimizations
@@ -127,7 +151,7 @@ else
         echo "'$IDLE_PATH' is not empty; can't build without replacing"
         exit 1
     fi
-    ./configure MACOSX_DEPLOYMENT_TARGET=10.9 \
+    ./configure \
         --prefix="$PYTHON_INSTALL_PREFIX" \
         --with-openssl="$OPENSSL_INSTALL_PREFIX" \
         --enable-framework="$PYTHON_INSTALL_PREFIX" \
@@ -156,6 +180,7 @@ else
     # Make the framework's main dylib relocatable using rpath
 
     LINK="$PYTHON_INSTALL_PREFIX/Python.framework/Versions/$MAJOR_MINOR"
+    PYVER=python$MAJOR_MINOR
     cd "$LINK"
     chmod u+w Python
     otool -D ./Python
@@ -167,11 +192,11 @@ else
     # framework in a relative way and add the proper rpath to find the Python (renamed dylib)
 
     cd bin
-    install_name_tool -change $LINK/Python @rpath/Python python$MAJOR_MINOR
-    install_name_tool -change $LINK/Python @rpath/Python python$MAJOR_MINORm
-    install_name_tool -add_rpath @executable_path/../ ./python$MAJOR_MINOR
+    install_name_tool -change $LINK/Python @rpath/Python ./$PYVER
+    install_name_tool -change $LINK/Python @rpath/Python ./${PYVER}m
+    install_name_tool -add_rpath @executable_path/../ ./$PYVER
     # so that python3 can find the Qt Frameworks and proper plugins for PyQt5
-    install_name_tool -add_rpath @executable_path/../../../../ ./python$MAJOR_MINOR
+    install_name_tool -add_rpath @executable_path/../../../../ ./$PYVER
 
     # now do the same for the Python.app stored inside the Python.framework Resources
     # This app is needed to allow gui use by python for plugins
@@ -181,4 +206,16 @@ else
     install_name_tool -add_rpath @executable_path/../../../../ ./Python
 
     # We should now have a fully relocatable Python.framework
+
+    # Strip the pyc files (~80 MB)
+    cd "$LINK"
+    find . -name "__pycache__" | xargs rm -r
+
+    # Strip the test directory (~30 MB)
+    [ -d lib/$PYVER/test ] && rm -r lib/$PYVER/test
+    [ -d lib/$PYVER/unittest/test ] && rm -r lib/$PYVER/unittest/test
+
+    # Bundle should now be ~40 MB uncompressed.
+    # Could perhaps squeeze another 10 MB out if we cared to, but then it
+    # would no longer be the "batteries included" python.
 fi
