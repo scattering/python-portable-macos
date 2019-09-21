@@ -11,6 +11,53 @@
 #    find Python.framework -name __pycache__ | xargs rm -r
 #
 # Unfortunately, this will increase startup time on first launch.
+#
+
+# TODO: need update scripts to use relocatable python
+# Executable scripts in Python.framework/.../bin such as pip3.7 need to use
+# relative paths to find the interpreter otherwise the framework is not
+# relocatable.  Doing this in such a way that it allows symbolic links as
+# well as unicode or spaces in the linked name is complicated.
+#
+# Need to change:
+#
+#    #!/path/to/python
+#
+# into:
+#
+#    #!/bin/sh
+#    "exec" "$PYTHON" "$0" "$@"
+#
+# This will work because the shell parser sees the second line as:
+#
+#    exec /path/to/python scriptname scriptargs...
+#
+# whie python sees it as a single comment (the python interpreter joins
+# consecutive strings into one string).
+#
+# The path to the python interpreter, $PYTHON, is found using shell tricks:
+#
+#    # $0 is the name use to invoke the script
+#    SCRIPT="$0"
+#    # If it is a link, we can use "readlink $SCRIPT" to resolve the link.
+#    # This raises an error if it is not a link, so on error just echo the
+#    # the script name.
+#    REAL_SCRIPT="$(readlink "$SCRIPT" || echo "$SCRIPT")"
+#    # We need the directory name not the filename for the script
+#    APP_DIR="$(dirname "$REAL_SCRIPT")"
+#    # ... and in particular, we need its parent ...
+#    APP_ROOT="$(cd "$APP_DIR/.."; pwd -P)"
+#    # ... because the path to python is relative to the parent directory.
+#    PYTHON="$APP_ROOT/Resources/Python.app/Contents/MacOS/Python"
+#
+# Expanding, the full shebang is:
+#
+#    #!/bin/sh
+#    "exec" """$(cd "$(dirname "$(readlink "$0" || echo "$0")")/.."; pwd -P)/Resources/Python.app/Contents/MacOS/Python""" "$0" "$@"
+#
+# The triple-double-quote is treated like a single quote in sh and like a
+# multi-line string in python; this lets us have embedded quotes in the
+# expression and be compatible with both the shell parser and the python parser.
 
 # Details about building the relocatable python framework were cribbed from
 # the following package:
@@ -214,6 +261,16 @@ else
     cd $LINK/Resources/Python.app/Contents/MacOS
     install_name_tool -change $LINK/Python @rpath/Python ./Python
     install_name_tool -add_rpath @executable_path/../../../../ ./Python
+
+    # Correct symlinks in the python-portable/bin directory
+    # TODO: make relative shebang in the Python.framework/.../bin directory
+    RELBIN="../Python.framework/Versions/$MAJOR_MINOR/bin"
+    cd "$PYTHON_INSTALL_PREFIX/bin"
+    for f in *; do ln -sfn $RELBIN/$f $f; done
+    ln -sfn $RELBIN/python$MAJOR_MINOR python3
+    ln -sfn $RELBIN/python$MAJOR_MINOR python
+    ln -sfn $RELBIN/pip$MAJOR_MINOR pip3
+    ln -sfn $RELBIN/pip$MAJOR_MINOR pip
 
     # We should now have a fully relocatable Python.framework
 
