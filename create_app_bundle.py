@@ -82,10 +82,11 @@ def create_app_bundle(bundle_dir, bundle_name, python_dir):
     shutil.copyfile(origin_icon, destination_icon)
 
     # Copy python_dir to the Resources folder
-    print('\tCopy the Python folder...')
-    py_folder_name = os.path.basename(python_dir)
-    destination_python = os.path.join(resources_dir, py_folder_name)
-    shutil.copytree(python_dir, destination_python)
+    print('\tCopy the Python framework...')
+    py_folder_name = "Python.framework"
+    py_folder_path = os.path.join(python_dir, py_folder_name)
+    destination_python = os.path.join(frameworks_dir, py_folder_name)
+    shutil.copytree(py_folder_path, destination_python)
 
     # Copy test file to the Resources folder
     print('\tAdd a luncher Python file for testing PyQt hello world...')

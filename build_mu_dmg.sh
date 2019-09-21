@@ -6,21 +6,30 @@ PATCH=3.7.4
 MACVER=10.9
 PYBUNDLE=python-$PATCH-osx-$MACVER.zip
 
+# Location of portable python release
+PYBUNDLE_URL https://github.com/scattering/python-portable-macos/release/$PYBUNDLE
+PYTHON=python-portable/bin/$PYVER
+
 # Setup mu-bundle directory with the portable python, the dmg builder and Mu
 [ -d mu-bundle ] && rm -r mu-bundle
+mkdir mu-bundle
 cd mu-bundle
 git clone https://github.com/mu-editor/mu.git
 git clone https://github.com/andreyvit/yoursway-create-dmg.git
-unzip -q ../upload/PYBUNDLE
+# When the mu installer is split from the portable python build, use:
+#   curl -O $PYBUNDLE_URL
+#   unzip -q $PYBUNDLE
+# For now, use the bundle in ../upload since it is still part of this repo
+unzip -q ../upload/$PYBUNDLE
 
 # Install Mu from master branch
-python-portable/bin/$PYVER -m pip install ./mu
+$PYTHON -m pip install ./mu
 
 # Strip the pycache files created when installing mu
 find python-portable -name "__pycache__" | xargs rm -r
 
 # Process Python build with Mu and create an App Bundle to upload
-python ../create_app_bundle.py "python-portable" "Mu"
+$PYTHON ../create_app_bundle.py "python-portable" "Mu"
 mv "mu-portable.zip" "../upload/mu-portable.zip"
 #curl --upload-file ./upload/Mu-portable.zip https://transfer.sh/Mu-portable.zip | tee -a output_urls.txt && echo "" >> output_urls.txt
 
