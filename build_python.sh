@@ -33,7 +33,6 @@ OPENSSL_VERSION="1.1.1d"
 XZ_VERSION="5.2.4"
 PYTHON_VERSION="3.7.4"
 MAJOR_MINOR="3.7"
-IDLE_PATH="/Applications/Python $MAJOR_MINOR"
 
 
 # Note: To upgrade to newer release of openssl or python you need to
@@ -87,6 +86,18 @@ PYTHON_INSTALL_PREFIX="$CURRENT_DIR/python-portable"
 
 echo $CURRENT_DIR
 
+# For framework builds, need to make sure that we don't tromp on an existing
+# python installation.  Test this *before* doing any real work.
+if true; then
+    IDLE_INSTALL="/Applications/Python $MAJOR_MINOR.app"
+    IDLE_TARGET="$PYTHON_INSTALL_PREFIX/Python $MAJOR_MINOR.app"
+    if test -d "$IDLE_INSTALL"; then
+        # python framework installer dumps idle into /Applications/Python 3.x
+        echo "'$IDLE_INSTALL' is not empty; can't build without replacing it"
+        exit 1
+    fi
+fi
+
 if [ ! -f $OPENSSL_BUNDLE ]; then
     large_echo "Download and uncompress openssl $OPENSSL_VERSION source"
     curl -O $OPENSSL_URL
@@ -139,18 +150,13 @@ fi
 large_echo "Build python $PYTHON_VERSION"
 cd "$CURRENT_DIR/$PYTHON_SOURCE"
 if false; then
-    # TODO: strip __pycache__ and tests as in the framework build
     ./configure \
         --prefix="$PYTHON_INSTALL_PREFIX"  \
         --with-openssl="$OPENSSL_INSTALL_PREFIX" \
         --enable-optimizations
     make altinstall
+    # TODO: strip __pycache__ and tests as we do in the framework build
 else
-    if test -f "$IDLE_PATH"; then
-        # python framework installer dumps idle into /Applications/Python 3.x
-        echo "'$IDLE_PATH' is not empty; can't build without replacing"
-        exit 1
-    fi
     ./configure \
         --prefix="$PYTHON_INSTALL_PREFIX" \
         --with-openssl="$OPENSSL_INSTALL_PREFIX" \
@@ -161,7 +167,11 @@ else
     # them test network access.
     #make -j4
     make altinstall
-    rm -r "$IDLE_PATH"
+
+    # Move the Python "app" (idle) from /Applications to python-embed
+    # TODO: attach the framework to the idle app.
+    [ -d "$IDLE_TARGET" ] && rm -r "$IDLE_TARGET"
+    mv "$IDLE_INSTALL" "$IDLE_TARGET"
 
     # Now a complete Python.framework has been built in ${PYTHON_INSTALL_PREFIX}
     # But we still need to make it a relocatable framework
@@ -218,4 +228,19 @@ else
     # Bundle should now be ~40 MB uncompressed.
     # Could perhaps squeeze another 10 MB out if we cared to, but then it
     # would no longer be the "batteries included" python.
+
+    # The process_python_build.py script strips the following:
+    #     __pycache__, idlelib, ensurepip, test
+    # Much easier to do this in bash if we want it.
+
+    # TODO: putting the libraries into zip files full of pyc will make
+    # startup much faster, but will destroy flexibility.
 fi
+
+# Build the upload zip file
+cd "$CURRENT_DIR"
+[ ! -d upload ] && mkdir upload
+UPLOAD_FILE=python-$PYTHON_VERSION-osx-$MACOSX_DEPLOYMENT_TARGET.zip
+UPLOAD_PATH=upload/$UPLOAD_FILE
+zip --symlinks -r $UPLOAD_PATH python-portable 1> /dev/null
+# curl --upload-file $UPLOAD_PATH https://transfer.sh/$UPLOAD_FILE | tee -a output_urls.txt && echo "" >> output_urls.txt
